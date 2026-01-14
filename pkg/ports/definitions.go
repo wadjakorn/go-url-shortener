@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/wadjakorntonsri/go-url-shortener/internal/core/domain"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/core/domain"
 )
 
 // LinkRepository defines storage operations for links

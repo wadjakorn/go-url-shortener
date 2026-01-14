@@ -3,10 +3,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/wadjakorntonsri/go-url-shortener/internal/adapters/handler"
-	"github.com/wadjakorntonsri/go-url-shortener/internal/adapters/repository/sqlite"
-	"github.com/wadjakorntonsri/go-url-shortener/internal/config"
-	"github.com/wadjakorntonsri/go-url-shortener/internal/core/services"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/adapters/handler"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/adapters/repository/sqlite"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/config"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/core/services"
 )
 
 var mux *http.ServeMux

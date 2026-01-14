@@ -8,8 +8,8 @@ import (
 	"time"
 
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // Turso driver
-	"github.com/wadjakorntonsri/go-url-shortener/internal/core/domain"
-	"github.com/wadjakorntonsri/go-url-shortener/internal/ports"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/core/domain"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/ports"
 	_ "modernc.org/sqlite" // Local SQLite driver
 )
 

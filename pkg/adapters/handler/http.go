@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/wadjakorntonsri/go-url-shortener/internal/ports"
+	"github.com/wadjakorntonsri/go-url-shortener/pkg/ports"
 )
 
 type HTTPHandler struct {

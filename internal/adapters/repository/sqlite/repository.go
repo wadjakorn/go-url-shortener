@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
+	_ "github.com/tursodatabase/libsql-client-go/libsql" // Turso driver
 	"github.com/wadjakorntonsri/go-url-shortener/internal/core/domain"
 	"github.com/wadjakorntonsri/go-url-shortener/internal/ports"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Local SQLite driver
 )
 
 type SQLiteRepository struct {
@@ -16,7 +18,12 @@ type SQLiteRepository struct {
 }
 
 func NewSQLiteRepository(dbURL string) (*SQLiteRepository, error) {
-	db, err := sql.Open("sqlite", dbURL)
+	driverName := "sqlite"
+	if strings.Contains(dbURL, "libsql://") || strings.Contains(dbURL, "wss://") {
+		driverName = "libsql"
+	}
+
+	db, err := sql.Open(driverName, dbURL)
 	if err != nil {
 		return nil, err
 	}

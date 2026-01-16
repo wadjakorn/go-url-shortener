@@ -71,15 +71,17 @@ func (h *HTTPHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Async track visit
-	go func() {
-		// Use background context as request context will be cancelled
-		// Getting IP/UserAgent
-		referer := r.Header.Get("Referer")
-		userAgent := r.UserAgent()
-		ip := r.RemoteAddr // naive
-		_ = h.service.RecordVisit(context.Background(), code, referer, userAgent, ip)
-	}()
+	// Async track visit (only if query param "no_stat" is not set)
+	if r.URL.Query().Get("no_stat") == "" {
+		go func() {
+			// Use background context as request context will be cancelled
+			// Getting IP/UserAgent
+			referer := r.Header.Get("Referer")
+			userAgent := r.UserAgent()
+			ip := r.RemoteAddr // naive
+			_ = h.service.RecordVisit(context.Background(), code, referer, userAgent, ip)
+		}()
+	}
 
 	http.Redirect(w, r, originalURL, http.StatusFound)
 }

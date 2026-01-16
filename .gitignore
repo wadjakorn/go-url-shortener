@@ -27,8 +27,5 @@ go.work
 .vscode/
 .idea/
 
-server
-cli
-
 # google oauth secret
 **/client_secret.json

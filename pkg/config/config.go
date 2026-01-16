@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	GoogleRedirectURL  string
 	JWTSecret          string
 	FrontendURL        string
+	AllowedEmails      []string
 }
 
 func Load() *Config {
@@ -31,7 +33,15 @@ func Load() *Config {
 		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/auth/google/callback"),
 		JWTSecret:          getEnv("JWT_SECRET", "secret"),
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:8080/dashboard"),
+		AllowedEmails:      getEnvAsSlice("ALLOWED_EMAILS", []string{}),
 	}
+}
+
+func getEnvAsSlice(key string, fallback []string) []string {
+	if value, exists := os.LookupEnv(key); exists && value != "" {
+		return strings.Split(value, ",")
+	}
+	return fallback
 }
 
 func getEnv(key, fallback string) string {

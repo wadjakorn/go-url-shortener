@@ -15,9 +15,10 @@ import (
 )
 
 type AuthHandler struct {
-	oauthConfig *oauth2.Config
-	jwtSecret   []byte
-	frontendURL string
+	oauthConfig   *oauth2.Config
+	jwtSecret     []byte
+	frontendURL   string
+	allowedEmails []string
 }
 
 type GoogleUser struct {
@@ -40,8 +41,9 @@ func NewAuthHandler(cfg *config.Config) *AuthHandler {
 			},
 			Endpoint: google.Endpoint,
 		},
-		jwtSecret:   []byte(cfg.JWTSecret),
-		frontendURL: cfg.FrontendURL,
+		jwtSecret:     []byte(cfg.JWTSecret),
+		frontendURL:   cfg.FrontendURL,
+		allowedEmails: cfg.AllowedEmails,
 	}
 }
 
@@ -83,6 +85,21 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Email Allowlist Check
+	if len(h.allowedEmails) > 0 {
+		isAllowed := false
+		for _, email := range h.allowedEmails {
+			if email == googleUser.Email {
+				isAllowed = true
+				break
+			}
+		}
+		if !isAllowed {
+			http.Error(w, "Access denied: your email is not in the allowlist", http.StatusForbidden)
+			return
+		}
+	}
+
 	// Create JWT Token
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &jwt.RegisteredClaims{
@@ -119,7 +136,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 	})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, h.frontendURL+"/login", http.StatusTemporaryRedirect)
 }
 
 func generateStateOauthCookie(w http.ResponseWriter) string {

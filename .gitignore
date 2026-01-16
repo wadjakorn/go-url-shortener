@@ -29,3 +29,6 @@ go.work
 
 server
 cli
+
+# google oauth secret
+**/client_secret.json

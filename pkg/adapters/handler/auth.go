@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ type AuthHandler struct {
 	jwtSecret     []byte
 	frontendURL   string
 	allowedEmails []string
+	isProduction  bool
 }
 
 type GoogleUser struct {
@@ -44,11 +46,12 @@ func NewAuthHandler(cfg *config.Config) *AuthHandler {
 		jwtSecret:     []byte(cfg.JWTSecret),
 		frontendURL:   cfg.FrontendURL,
 		allowedEmails: cfg.AllowedEmails,
+		isProduction:  cfg.AppEnv == "production",
 	}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	state := generateStateOauthCookie(w)
+	state := h.generateStateOauthCookie(w)
 	url := h.oauthConfig.AuthCodeURL(state)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
@@ -56,11 +59,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	oauthState, err := r.Cookie("oauthstate")
 	if err != nil {
+		log.Printf("Callback error: missing oauthstate cookie: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	if r.FormValue("state") != oauthState.Value {
+		log.Printf("Callback error: invalid oauth state. Expected %s, got %s", oauthState.Value, r.FormValue("state"))
 		http.Error(w, "invalid oauth google state", http.StatusOK)
 		return
 	}
@@ -68,12 +73,14 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 	token, err := h.oauthConfig.Exchange(context.Background(), code)
 	if err != nil {
+		log.Printf("Callback error: code exchange failed: %v", err)
 		http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	response, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
 	if err != nil {
+		log.Printf("Callback error: failed getting user info: %v", err)
 		http.Error(w, "failed getting user info: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -81,6 +88,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	var googleUser GoogleUser
 	if err := json.NewDecoder(response.Body).Decode(&googleUser); err != nil {
+		log.Printf("Callback error: failed decoding user info: %v", err)
 		http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -95,6 +103,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !isAllowed {
+			log.Printf("Callback error: email %s not in allowlist", googleUser.Email)
 			http.Error(w, "Access denied: your email is not in the allowlist", http.StatusForbidden)
 			return
 		}
@@ -110,6 +119,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString(h.jwtSecret)
 	if err != nil {
+		log.Printf("Callback error: failed signing JWT: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -120,10 +130,12 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Value:    tokenString,
 		Expires:  expirationTime,
 		Path:     "/",
-		HttpOnly: true, // Secure, not accessible by JS
-		// Secure:   true, // Uncomment in production with HTTPS
+		HttpOnly: true,
+		Secure:   h.isProduction, // Set based on environment
+		SameSite: http.SameSiteLaxMode,
 	})
 
+	log.Printf("Login successful for user: %s", googleUser.Email)
 	// Redirect to frontend/dashboard
 	http.Redirect(w, r, h.frontendURL, http.StatusTemporaryRedirect)
 }
@@ -135,11 +147,13 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Now().Add(-1 * time.Hour),
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.isProduction,
+		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, h.frontendURL+"/login", http.StatusTemporaryRedirect)
 }
 
-func generateStateOauthCookie(w http.ResponseWriter) string {
+func (h *AuthHandler) generateStateOauthCookie(w http.ResponseWriter) string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
@@ -149,7 +163,8 @@ func generateStateOauthCookie(w http.ResponseWriter) string {
 		Expires:  time.Now().Add(20 * time.Minute),
 		Path:     "/",
 		HttpOnly: true,
-		// Secure:   true, // Uncomment in production with HTTPS
+		Secure:   h.isProduction, // Set based on environment
+		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, &cookie)
 	return state

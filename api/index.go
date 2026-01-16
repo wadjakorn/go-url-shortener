@@ -9,7 +9,7 @@ import (
 	"github.com/wadjakorntonsri/go-url-shortener/pkg/core/services"
 )
 
-var mux *http.ServeMux
+var mux http.Handler
 
 func init() {
 	cfg := config.Load()
@@ -22,16 +22,7 @@ func init() {
 	}
 
 	service := services.NewLinkService(repo)
-	h := handler.NewHTTPHandler(service)
-
-	mux = http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/links", h.Create)
-	mux.HandleFunc("GET /api/v1/links", h.List)
-	mux.HandleFunc("GET /api/v1/links/{id}/stats", h.Stats)
-	mux.HandleFunc("GET /api/v1/dashboard", h.Dashboard)
-	mux.HandleFunc("PUT /api/v1/links/{id}", h.Update)
-	mux.HandleFunc("DELETE /api/v1/links/{id}", h.Delete)
-	mux.HandleFunc("GET /open/{short_code}", h.Redirect)
+	mux = handler.NewRouter(cfg, service)
 }
 
 // Handler is the entrypoint for Vercel

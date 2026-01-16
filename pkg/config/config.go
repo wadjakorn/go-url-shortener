@@ -11,7 +11,6 @@ type Config struct {
 	Port               string
 	DatabaseURL        string
 	AppEnv             string
-	BaseURL            string
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
@@ -27,7 +26,6 @@ func Load() *Config {
 		Port:               getEnv("PORT", "8080"),
 		DatabaseURL:        getEnv("DATABASE_URL", "file:db.sqlite"),
 		AppEnv:             getEnv("APP_ENV", "local"),
-		BaseURL:            getEnv("BASE_URL", "http://localhost:8080"),
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/auth/google/callback"),

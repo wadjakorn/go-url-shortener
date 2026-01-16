@@ -63,6 +63,25 @@ func migrate(db *sql.DB) error {
 		FOREIGN KEY(link_id) REFERENCES links(id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_visits_link_id ON visits(link_id);
+
+	CREATE TABLE IF NOT EXISTS collections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		slug TEXT NOT NULL UNIQUE,
+		title TEXT,
+		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_collections_slug ON collections(slug);
+
+	CREATE TABLE IF NOT EXISTS collection_links (
+		collection_id INTEGER NOT NULL,
+		link_id INTEGER NOT NULL,
+		sort_order INTEGER DEFAULT 0,
+		PRIMARY KEY (collection_id, link_id),
+		FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+		FOREIGN KEY(link_id) REFERENCES links(id) ON DELETE CASCADE
+	);
 	`
 	_, err := db.Exec(query)
 	return err
@@ -383,6 +402,137 @@ func (r *SQLiteRepository) GetDashboardStats(ctx context.Context, limit int, fil
 	}
 
 	return links, totalSystemClicks, nil
+}
+
+// --- Collection Repository Implementation ---
+
+func (r *SQLiteRepository) CreateCollection(ctx context.Context, collection *domain.Collection) error {
+	query := `INSERT INTO collections (slug, title, description, created_at, updated_at) 
+			  VALUES (?, ?, ?, ?, ?) RETURNING id`
+
+	res, err := r.db.ExecContext(ctx, query, collection.Slug, collection.Title, collection.Description, collection.CreatedAt, collection.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	collection.ID = id
+	return nil
+}
+
+func (r *SQLiteRepository) GetCollection(ctx context.Context, id int64) (*domain.Collection, error) {
+	query := `SELECT id, slug, title, description, created_at, updated_at FROM collections WHERE id = ?`
+	row := r.db.QueryRowContext(ctx, query, id)
+
+	var c domain.Collection
+	if err := row.Scan(&c.ID, &c.Slug, &c.Title, &c.Description, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (r *SQLiteRepository) GetCollectionBySlug(ctx context.Context, slug string) (*domain.Collection, error) {
+	query := `SELECT id, slug, title, description, created_at, updated_at FROM collections WHERE slug = ?`
+	row := r.db.QueryRowContext(ctx, query, slug)
+
+	var c domain.Collection
+	if err := row.Scan(&c.ID, &c.Slug, &c.Title, &c.Description, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (r *SQLiteRepository) UpdateCollection(ctx context.Context, collection *domain.Collection) error {
+	query := `UPDATE collections SET slug = ?, title = ?, description = ?, updated_at = ? WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, collection.Slug, collection.Title, collection.Description, collection.UpdatedAt, collection.ID)
+	return err
+}
+
+func (r *SQLiteRepository) DeleteCollection(ctx context.Context, id int64) error {
+	query := `DELETE FROM collections WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}
+
+func (r *SQLiteRepository) ListCollections(ctx context.Context, limit, offset int, filters map[string]interface{}) ([]domain.Collection, error) {
+	query := `SELECT id, slug, title, description, created_at, updated_at FROM collections`
+	args := []interface{}{}
+
+	if search, ok := filters["search"].(string); ok && search != "" {
+		query += " WHERE title LIKE ? OR slug LIKE ?"
+		args = append(args, "%"+search+"%", "%"+search+"%")
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var collections []domain.Collection
+	for rows.Next() {
+		var c domain.Collection
+		if err := rows.Scan(&c.ID, &c.Slug, &c.Title, &c.Description, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		collections = append(collections, c)
+	}
+	return collections, nil
+}
+
+func (r *SQLiteRepository) AddLinkToCollection(ctx context.Context, collectionID, linkID int64) error {
+	query := `INSERT INTO collection_links (collection_id, link_id) VALUES (?, ?)`
+	_, err := r.db.ExecContext(ctx, query, collectionID, linkID)
+	return err
+}
+
+func (r *SQLiteRepository) RemoveLinkFromCollection(ctx context.Context, collectionID, linkID int64) error {
+	query := `DELETE FROM collection_links WHERE collection_id = ? AND link_id = ?`
+	_, err := r.db.ExecContext(ctx, query, collectionID, linkID)
+	return err
+}
+
+func (r *SQLiteRepository) UpdateLinkOrder(ctx context.Context, collectionID, linkID int64, newOrder int) error {
+	query := `UPDATE collection_links SET sort_order = ? WHERE collection_id = ? AND link_id = ?`
+	_, err := r.db.ExecContext(ctx, query, newOrder, collectionID, linkID)
+	return err
+}
+
+func (r *SQLiteRepository) GetCollectionLinks(ctx context.Context, collectionID int64) ([]domain.Link, error) {
+	query := `SELECT l.id, l.original_url, l.short_code, l.title, l.tags, l.created_at, l.updated_at
+			  FROM links l
+			  JOIN collection_links cl ON l.id = cl.link_id
+			  WHERE cl.collection_id = ? AND l.deleted_at IS NULL
+			  ORDER BY cl.sort_order ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var links []domain.Link
+	for rows.Next() {
+		var l domain.Link
+		var tagsJSON []byte
+		if err := rows.Scan(&l.ID, &l.OriginalURL, &l.ShortCode, &l.Title, &tagsJSON, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(tagsJSON, &l.Tags)
+		links = append(links, l)
+	}
+	return links, nil
 }
 
 // Ensure interface compliance

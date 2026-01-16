@@ -22,7 +22,8 @@ func init() {
 	}
 
 	service := services.NewLinkService(repo)
-	mux = handler.NewRouter(cfg, service)
+	collectionService := services.NewCollectionService(repo)
+	mux = handler.NewRouter(cfg, service, collectionService)
 }
 
 // Handler is the entrypoint for Vercel

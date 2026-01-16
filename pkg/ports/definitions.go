@@ -21,6 +21,31 @@ type LinkRepository interface {
 	RecordVisit(ctx context.Context, visit *domain.Visit) error
 	GetLinkStats(ctx context.Context, linkID int64) (*domain.LinkStats, error)
 	GetDashboardStats(ctx context.Context, limit int, filters map[string]interface{}) ([]domain.Link, int64, error)
+
+	// Collections
+	CreateCollection(ctx context.Context, collection *domain.Collection) error
+	GetCollection(ctx context.Context, id int64) (*domain.Collection, error)
+	GetCollectionBySlug(ctx context.Context, slug string) (*domain.Collection, error)
+	UpdateCollection(ctx context.Context, collection *domain.Collection) error
+	DeleteCollection(ctx context.Context, id int64) error
+	ListCollections(ctx context.Context, limit, offset int, filters map[string]interface{}) ([]domain.Collection, error)
+	AddLinkToCollection(ctx context.Context, collectionID, linkID int64) error
+	RemoveLinkFromCollection(ctx context.Context, collectionID, linkID int64) error
+	UpdateLinkOrder(ctx context.Context, collectionID, linkID int64, newOrder int) error
+	GetCollectionLinks(ctx context.Context, collectionID int64) ([]domain.Link, error)
+} // LinkRepository ends here
+
+// CollectionService defines business logic for collections
+type CollectionService interface {
+	CreateCollection(ctx context.Context, title, slug, description string) (*domain.Collection, error)
+	GetCollection(ctx context.Context, id int64) (*domain.Collection, error)
+	GetCollectionBySlug(ctx context.Context, slug string) (*domain.Collection, error)
+	UpdateCollection(ctx context.Context, id int64, title, slug, description string) (*domain.Collection, error)
+	DeleteCollection(ctx context.Context, id int64) error
+	ListCollections(ctx context.Context, page, limit int, search string) ([]domain.Collection, int64, error)
+	AddLink(ctx context.Context, collectionID, linkID int64) error
+	RemoveLink(ctx context.Context, collectionID, linkID int64) error
+	ReorderLinks(ctx context.Context, collectionID int64, linkIDs []int64) error
 }
 
 // LinkService defines the business logic operations

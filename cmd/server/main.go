@@ -22,9 +22,10 @@ func main() {
 
 	// Initialize Service
 	service := services.NewLinkService(repo)
+	collectionService := services.NewCollectionService(repo)
 
 	// Initialize Router
-	mux := handler.NewRouter(cfg, service)
+	mux := handler.NewRouter(cfg, service, collectionService)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

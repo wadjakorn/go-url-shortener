@@ -31,7 +31,7 @@ func init() {
 	mux.HandleFunc("GET /api/v1/dashboard", h.Dashboard)
 	mux.HandleFunc("PUT /api/v1/links/{id}", h.Update)
 	mux.HandleFunc("DELETE /api/v1/links/{id}", h.Delete)
-	mux.HandleFunc("GET /{short_code}", h.Redirect)
+	mux.HandleFunc("GET /open/{short_code}", h.Redirect)
 }
 
 // Handler is the entrypoint for Vercel

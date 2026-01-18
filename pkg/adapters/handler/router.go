@@ -36,6 +36,8 @@ func NewRouter(cfg *config.Config, service ports.LinkService, collectionService 
 	mux.HandleFunc("GET /auth/google/login", authHandler.Login)
 	mux.HandleFunc("GET /auth/google/callback", authHandler.Callback)
 	mux.HandleFunc("GET /auth/logout", authHandler.Logout)
+	mux.HandleFunc("GET /api/v1/public/links/{short_code}", h.GetPublicByShortCode)
+	mux.HandleFunc("POST /api/v1/public/links/{short_code}/track", h.Track)
 
 	// Protected Routes (API & Dashboard)
 	protectedMux := http.NewServeMux()

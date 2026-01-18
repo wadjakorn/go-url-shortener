@@ -86,6 +86,46 @@ func (h *HTTPHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, originalURL, http.StatusFound)
 }
 
+// Get Public Link (without redirect, for metadata resolution)
+func (h *HTTPHandler) GetPublicByShortCode(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("short_code")
+	if code == "" {
+		http.Error(w, "Short code missing", http.StatusBadRequest)
+		return
+	}
+
+	link, err := h.service.GetLinkByShortCode(r.Context(), code)
+	if err != nil {
+		http.Error(w, "Link not found", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(link)
+}
+
+// Track visit manually
+func (h *HTTPHandler) Track(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("short_code")
+	if code == "" {
+		http.Error(w, "Short code missing", http.StatusBadRequest)
+		return
+	}
+
+	// Async or Sync tracking
+	referer := r.Header.Get("Referer")
+	userAgent := r.UserAgent()
+	ip := r.RemoteAddr
+
+	if err := h.service.RecordVisit(r.Context(), code, referer, userAgent, ip); err != nil {
+		// Just log error or ignore, don't break flow?
+		// For now return error to client so they know
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // Get Stats for a Link
 func (h *HTTPHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")

@@ -60,4 +60,5 @@ type LinkService interface {
 	RecordVisit(ctx context.Context, shortCode, referer, userAgent, ip string) error
 	GetLinkStats(ctx context.Context, id int64) (*domain.LinkStats, error)
 	GetDashboard(ctx context.Context, limit int, search, tag, domainFilter string) ([]domain.Link, int64, error)
+	GetLinkByShortCode(ctx context.Context, code string) (*domain.Link, error)
 }

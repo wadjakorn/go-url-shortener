@@ -169,6 +169,17 @@ func (s *LinkService) GetDashboard(ctx context.Context, limit int, search, tag, 
 	return s.repo.GetDashboardStats(ctx, limit, filters)
 }
 
+func (s *LinkService) GetLinkByShortCode(ctx context.Context, code string) (*domain.Link, error) {
+	link, err := s.repo.GetByShortCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if link == nil {
+		return nil, errors.New("link not found")
+	}
+	return link, nil
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func generateShortCode(length int) (string, error) {

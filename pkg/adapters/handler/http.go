@@ -111,8 +111,18 @@ func (h *HTTPHandler) Track(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Async or Sync tracking
 	referer := r.Header.Get("Referer")
+
+	// if body has custom_ref, use it instead of referer
+	var body map[string]interface{}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if customRef, ok := body["custom_ref"]; ok {
+		if customRef.(string) != "" {
+			referer = customRef.(string)
+		}
+	}
+
+	// Async or Sync tracking
 	userAgent := r.UserAgent()
 	ip := r.RemoteAddr
 

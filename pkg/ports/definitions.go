@@ -19,7 +19,7 @@ type LinkRepository interface {
 
 	// Stats
 	RecordVisit(ctx context.Context, visit *domain.Visit) error
-	GetLinkStats(ctx context.Context, linkID int64) (*domain.LinkStats, error)
+	GetLinkStats(ctx context.Context, linkID int64, filters map[string]interface{}) (*domain.LinkStats, error)
 	GetDashboardStats(ctx context.Context, limit int, filters map[string]interface{}) ([]domain.Link, int64, error)
 
 	// Collections
@@ -58,7 +58,7 @@ type LinkService interface {
 
 	// Stats
 	RecordVisit(ctx context.Context, shortCode, referer, userAgent, ip string) error
-	GetLinkStats(ctx context.Context, id int64) (*domain.LinkStats, error)
+	GetLinkStats(ctx context.Context, id int64, filters map[string]interface{}) (*domain.LinkStats, error)
 	GetDashboard(ctx context.Context, limit int, search, tag, domainFilter string) ([]domain.Link, int64, error)
 	GetLinkByShortCode(ctx context.Context, code string) (*domain.Link, error)
 }

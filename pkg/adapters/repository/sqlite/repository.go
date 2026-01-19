@@ -64,6 +64,7 @@ func migrate(db *sql.DB) error {
 		FOREIGN KEY(link_id) REFERENCES links(id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_visits_link_id ON visits(link_id);
+	CREATE INDEX IF NOT EXISTS idx_visits_link_created ON visits(link_id, created_at);
 
 	CREATE TABLE IF NOT EXISTS collections (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,20 +304,39 @@ func (r *SQLiteRepository) RecordVisit(ctx context.Context, visit *domain.Visit)
 	return tx.Commit()
 }
 
-func (r *SQLiteRepository) GetLinkStats(ctx context.Context, linkID int64) (*domain.LinkStats, error) {
+func (r *SQLiteRepository) GetLinkStats(ctx context.Context, linkID int64, filters map[string]interface{}) (*domain.LinkStats, error) {
 	stats := &domain.LinkStats{
 		Referrers:   make(map[string]int64),
 		DailyClicks: []domain.DailyClick{},
 	}
 
-	// Total Clicks
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM visits WHERE link_id = ?`, linkID).Scan(&stats.TotalClicks)
+	// Build Base Query
+	whereClause := "WHERE link_id = ?"
+	args := []interface{}{linkID}
+
+	if start, ok := filters["start_date"].(time.Time); ok {
+		whereClause += " AND created_at >= ?"
+		args = append(args, start)
+	}
+	if end, ok := filters["end_date"].(time.Time); ok {
+		whereClause += " AND created_at < ?"
+		args = append(args, end)
+	}
+	if ref, ok := filters["referer"].(string); ok && ref != "" {
+		whereClause += " AND referer LIKE ?"
+		args = append(args, "%"+ref+"%")
+	}
+
+	// 1. Total Clicks
+	queryTotal := "SELECT COUNT(*) FROM visits " + whereClause
+	err := r.db.QueryRowContext(ctx, queryTotal, args...).Scan(&stats.TotalClicks)
 	if err != nil {
 		return nil, err
 	}
 
-	// Referrers
-	rows, err := r.db.QueryContext(ctx, `SELECT referer, COUNT(*) as c FROM visits WHERE link_id = ? GROUP BY referer ORDER BY c DESC LIMIT 10`, linkID)
+	// 2. Referrers
+	queryRef := "SELECT referer, COUNT(*) as c FROM visits " + whereClause + " GROUP BY referer ORDER BY c DESC LIMIT 10"
+	rows, err := r.db.QueryContext(ctx, queryRef, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -334,15 +354,17 @@ func (r *SQLiteRepository) GetLinkStats(ctx context.Context, linkID int64) (*dom
 	}
 	rows.Close()
 
-	// Daily Clicks (Last 30 days)
-	// SQLite date formatting: strftime('%Y-%m-%d', created_at)
-	rows2, err := r.db.QueryContext(ctx, `
+	// 3. Clicks (Last 30 days or filtered range)
+	// Note: We might want to adjust LIMIT if a specific large range is requested,
+	// but keeping LIMIT 30 for safety/UI consistency is fine for now unless paginated.
+	queryDaily := `
 		SELECT strftime('%Y-%m-%d', created_at) as date, COUNT(*) 
-		FROM visits 
-		WHERE link_id = ? 
+		FROM visits ` + whereClause + `
 		GROUP BY date 
 		ORDER BY date DESC 
-		LIMIT 30`, linkID)
+		LIMIT 30`
+
+	rows2, err := r.db.QueryContext(ctx, queryDaily, args...)
 	if err != nil {
 		return nil, err
 	}

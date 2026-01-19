@@ -155,8 +155,8 @@ func (s *LinkService) RecordVisit(ctx context.Context, shortCode, referer, userA
 	return s.repo.RecordVisit(ctx, visit)
 }
 
-func (s *LinkService) GetLinkStats(ctx context.Context, id int64) (*domain.LinkStats, error) {
-	return s.repo.GetLinkStats(ctx, id)
+func (s *LinkService) GetLinkStats(ctx context.Context, id int64, filters map[string]interface{}) (*domain.LinkStats, error) {
+	return s.repo.GetLinkStats(ctx, id, filters)
 }
 
 func (s *LinkService) GetDashboard(ctx context.Context, limit int, search, tag, domainFilter string) ([]domain.Link, int64, error) {

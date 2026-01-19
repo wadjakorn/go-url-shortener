@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/wadjakorntonsri/go-url-shortener/pkg/ports"
 )
@@ -152,7 +153,41 @@ func (h *HTTPHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.service.GetLinkStats(r.Context(), id)
+	filters := make(map[string]interface{})
+	query := r.URL.Query()
+
+	if ref := query.Get("referer"); ref != "" {
+		filters["referer"] = ref
+	}
+
+	if yearStr := query.Get("year"); yearStr != "" {
+		year, _ := strconv.Atoi(yearStr)
+		month := 1
+		day := 1
+
+		if m := query.Get("month"); m != "" {
+			month, _ = strconv.Atoi(m)
+		}
+		if d := query.Get("day"); d != "" {
+			day, _ = strconv.Atoi(d)
+		}
+
+		start := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+		var end time.Time
+
+		if query.Get("day") != "" {
+			end = start.AddDate(0, 0, 1)
+		} else if query.Get("month") != "" {
+			end = start.AddDate(0, 1, 0)
+		} else {
+			end = start.AddDate(1, 0, 0)
+		}
+
+		filters["start_date"] = start
+		filters["end_date"] = end
+	}
+
+	stats, err := h.service.GetLinkStats(r.Context(), id, filters)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

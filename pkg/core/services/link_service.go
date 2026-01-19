@@ -75,10 +75,12 @@ func (s *LinkService) UpdateLink(ctx context.Context, id int64, originalURL, tit
 		return nil, errors.New("link not found")
 	}
 
-	// Update fields if provided (naive partial update logic)
-	if originalURL != "" {
-		link.OriginalURL = originalURL
+	// Enforce Immutability: OriginalURL cannot be changed
+	if originalURL != "" && originalURL != link.OriginalURL {
+		return nil, errors.New("original URL cannot be changed")
 	}
+
+	// Update fields
 	if title != "" {
 		link.Title = title
 	}

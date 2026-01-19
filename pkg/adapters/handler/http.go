@@ -100,11 +100,17 @@ func (h *HTTPHandler) GetPublicByShortCode(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Aggressive Caching (1 Year, Immutable)
+	// Since OriginalURL never changes, this is safe.
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	json.NewEncoder(w).Encode(link)
 }
 
-// Track visit manually
+// Track visit manually (Dedicated endpoint for Edge Middleware)
 func (h *HTTPHandler) Track(w http.ResponseWriter, r *http.Request) {
+	// Never cache the tracking endpoint
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+
 	code := r.PathValue("short_code")
 	if code == "" {
 		http.Error(w, "Short code missing", http.StatusBadRequest)
@@ -115,10 +121,11 @@ func (h *HTTPHandler) Track(w http.ResponseWriter, r *http.Request) {
 
 	// if body has custom_ref, use it instead of referer
 	var body map[string]interface{}
+	// Ignore decode error as body might be empty
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if customRef, ok := body["custom_ref"]; ok {
-		if customRef.(string) != "" {
-			referer = customRef.(string)
+		if strRef, ok := customRef.(string); ok && strRef != "" {
+			referer = strRef
 		}
 	}
 
@@ -133,7 +140,7 @@ func (h *HTTPHandler) Track(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted) // 202 Accepted
 }
 
 // Get Stats for a Link

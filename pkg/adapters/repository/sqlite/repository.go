@@ -47,6 +47,7 @@ func migrate(db *sql.DB) error {
 		short_code TEXT NOT NULL UNIQUE,
 		title TEXT,
 		tags JSON,
+		clicks INTEGER DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		deleted_at DATETIME
@@ -83,8 +84,16 @@ func migrate(db *sql.DB) error {
 		FOREIGN KEY(link_id) REFERENCES links(id) ON DELETE CASCADE
 	);
 	`
-	_, err := db.Exec(query)
-	return err
+	if _, err := db.Exec(query); err != nil {
+		return err
+	}
+
+	// Migration for existing tables: Add 'clicks' column if it doesn't exist
+	// SQLite doesn't support IF NOT EXISTS for ADD COLUMN, so we just try and ignore error
+	// or check pragma table_info. Simpler is just to try.
+	_, _ = db.Exec(`ALTER TABLE links ADD COLUMN clicks INTEGER DEFAULT 0`)
+
+	return nil
 }
 
 func (r *SQLiteRepository) Create(ctx context.Context, link *domain.Link) error {
@@ -271,9 +280,27 @@ func (r *SQLiteRepository) Dump(ctx context.Context) ([]domain.Link, error) {
 }
 
 func (r *SQLiteRepository) RecordVisit(ctx context.Context, visit *domain.Visit) error {
-	query := `INSERT INTO visits (link_id, referer, user_agent, ip_hash, created_at) VALUES (?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, query, visit.LinkID, visit.Referer, visit.UserAgent, visit.IPHash, visit.CreatedAt.Format("2006-01-02 15:04:05"))
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Insert Visit Record
+	queryVisit := `INSERT INTO visits (link_id, referer, user_agent, ip_hash, created_at) VALUES (?, ?, ?, ?, ?)`
+	_, err = tx.ExecContext(ctx, queryVisit, visit.LinkID, visit.Referer, visit.UserAgent, visit.IPHash, visit.CreatedAt.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return err
+	}
+
+	// 2. Increment Link Clicks Counter (Atomic)
+	queryCount := `UPDATE links SET clicks = clicks + 1 WHERE id = ?`
+	_, err = tx.ExecContext(ctx, queryCount, visit.LinkID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *SQLiteRepository) GetLinkStats(ctx context.Context, linkID int64) (*domain.LinkStats, error) {
@@ -332,47 +359,39 @@ func (r *SQLiteRepository) GetLinkStats(ctx context.Context, linkID int64) (*dom
 }
 
 func (r *SQLiteRepository) GetDashboardStats(ctx context.Context, limit int, filters map[string]interface{}) ([]domain.Link, int64, error) {
-	// 1. Get total system clicks (simple count)
-	// Actually, the interface asks for []Link and int64 (which usually is total count of LINKS or CLICKS?).
-	// The implementation plan says "Top 10 links by clicks, Total system clicks".
-	// The return signature `([]domain.Link, int64, error)` in definitions.go matches ListLinks but here context is different.
-	// Let's assume int64 is Total CLICKS for the dashboard summary.
-
+	// 1. Get total system clicks (Optimized)
+	// Instead of scanning visits, we can sum the clicks column. Much faster.
 	var totalSystemClicks int64
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM visits`).Scan(&totalSystemClicks)
+	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(clicks), 0) FROM links WHERE deleted_at IS NULL`).Scan(&totalSystemClicks)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// 2. Get Top Links by clicks with filters
-	// We need to join visits or subquery.
-	// "rank by most used" -> ORDER BY (SELECT COUNT(*) FROM visits WHERE visits.link_id = links.id) DESC
-
+	// 2. Get Top Links by clicks (Optimized)
+	// Uses the indexed 'clicks' column (we should add an index later if needed, but for now it's a simple sort)
 	query := `
-		SELECT l.id, l.original_url, l.short_code, l.title, l.tags, l.created_at, l.updated_at,
-		(SELECT COUNT(*) FROM visits v WHERE v.link_id = l.id) as click_count
-		FROM links l
-		WHERE l.deleted_at IS NULL
+		SELECT id, original_url, short_code, title, tags, clicks, created_at, updated_at
+		FROM links
+		WHERE deleted_at IS NULL
 	`
 	args := []interface{}{}
 
 	if search, ok := filters["search"].(string); ok && search != "" {
-		query += " AND (l.title LIKE ?)" // Requested filter by title
+		query += " AND (title LIKE ?)"
 		args = append(args, "%"+search+"%")
 	}
 
 	if tag, ok := filters["tag"].(string); ok && tag != "" {
-		query += " AND EXISTS (SELECT 1 FROM json_each(l.tags) WHERE value = ?)"
+		query += " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)"
 		args = append(args, tag)
 	}
 
 	if domainFilter, ok := filters["domain"].(string); ok && domainFilter != "" {
-		// Simple string match for domain in original url
-		query += " AND l.original_url LIKE ?"
+		query += " AND original_url LIKE ?"
 		args = append(args, "%"+domainFilter+"%")
 	}
 
-	query += " ORDER BY click_count DESC LIMIT ?"
+	query += " ORDER BY clicks DESC LIMIT ?"
 	args = append(args, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -385,19 +404,11 @@ func (r *SQLiteRepository) GetDashboardStats(ctx context.Context, limit int, fil
 	for rows.Next() {
 		var l domain.Link
 		var tagsJSON []byte
-		var clickCount int64 // We don't have a field in Link for this yet, but we can ignore it or add it to domain if needed.
-		// For now scanning into existing struct, ignoring the extra column? No, Scan must match columns.
-		// We should probably add `Clicks` to domain.Link or just return it.
-		// The interface returns `[]domain.Link`.
-		// Strategy: Scan click_count into a dummy var for sorting, but we might want to display it.
-		// The user wants "ranking", so showing keys is important.
-		// I will modify domain.Link to add `Clicks` field (omitted if empty/0 presumably, or always valid). Easiest way.
 
-		if err := rows.Scan(&l.ID, &l.OriginalURL, &l.ShortCode, &l.Title, &tagsJSON, &l.CreatedAt, &l.UpdatedAt, &clickCount); err != nil {
+		if err := rows.Scan(&l.ID, &l.OriginalURL, &l.ShortCode, &l.Title, &tagsJSON, &l.Clicks, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(tagsJSON, &l.Tags)
-		l.Clicks = clickCount
 		links = append(links, l)
 	}
 
